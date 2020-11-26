@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:orientation="vertical"
+        android:layout_height="wrap_content">
+        <TextView
+            android:id="@+id/textView_advertisingStatus"
+            style="@style/row"
+            android:text="@string/advertising_status" />
+
+        <TextView
+            android:id="@+id/textView_connectionStatus"
+            style="@style/row"
+            android:text="@string/devices_connected" />
+
+        <View
+            android:id="@+id/hbar_three"
+            style="@style/hbar" />
+    </LinearLayout>
+
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/fragment_container"
+        style="@style/row" />
+
+    <TextView
+        android:id="@+id/log"
+        style="@style/row"
+        android:autoLink="web"
+        android:gravity="bottom"
+        android:scrollbars="vertical" />
+</LinearLayout>

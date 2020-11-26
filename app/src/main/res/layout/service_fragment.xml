@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="fill_parent"
+    android:layout_height="wrap_content">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/settings"
+        style="@style/row"
+        app:layout_constraintBottom_toTopOf="@id/hbar_one"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:id="@+id/textView_sensitivity"
+            style="@style/cell"
+            android:text="@string/sensitivity"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/textView_noise"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/textView_noise"
+            style="@style/cell"
+            android:text="@string/noise"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/textView_range"
+            app:layout_constraintStart_toEndOf="@id/textView_sensitivity"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/textView_range"
+            style="@style/cell"
+            android:text="@string/range"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/textView_noise"
+            app:layout_constraintTop_toTopOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <View
+        android:id="@+id/hbar_one"
+        style="@style/hbar"
+        app:layout_constraintBottom_toTopOf="@id/depth_values"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/settings" />
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/depth_values"
+        style="@style/row"
+        app:layout_constraintBottom_toTopOf="@id/misc_values"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:id="@+id/textView_depth"
+            style="@style/cell"
+            android:text="@string/depth"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/textView_strength"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/textView_strength"
+            style="@style/cell"
+            android:text="@string/strength"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/textView_depth"
+            app:layout_constraintTop_toTopOf="parent" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/misc_values"
+        style="@style/row"
+        app:layout_constraintTop_toBottomOf="@id/depth_values"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/fish_values">
+
+        <TextView
+            android:id="@+id/textView_temperature"
+            style="@style/cell"
+            android:text="@string/temperature"
+            app:layout_constraintEnd_toStartOf="@id/textView_battery"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/textView_battery"
+            style="@style/cell"
+            android:text="@string/battery"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/textView_temperature"
+            app:layout_constraintTop_toTopOf="parent" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/fish_values"
+        style="@style/row"
+        app:layout_constraintTop_toBottomOf="@id/misc_values"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/sample_values">
+
+        <TextView
+            android:id="@+id/textView_fishDepth"
+            style="@style/cell"
+            android:text="@string/fish_depth"
+            app:layout_constraintEnd_toStartOf="@id/textView_fishStrength"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/textView_fishStrength"
+            style="@style/cell"
+            android:text="@string/fish_strength"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/textView_fishDepth"
+            app:layout_constraintTop_toTopOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/sample_values"
+        style="@style/row"
+        app:layout_constraintTop_toBottomOf="@id/fish_values"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/fish_values">
+
+        <TextView
+            android:id="@+id/editText_sample_frequency_label"
+            style="@style/cell"
+            android:text="@string/sample_frequency"
+            app:layout_constraintEnd_toStartOf="@id/editText_sample_frequency"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <EditText
+            android:id="@+id/editText_sample_frequency"
+            style="@style/cell"
+            android:inputType="number"
+            android:text="@string/sample_frequency_spaceholder"
+            app:layout_constraintEnd_toStartOf="@id/textView_sampleCount"
+            app:layout_constraintStart_toEndOf="@+id/editText_sample_frequency_label"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/textView_sampleCount"
+            style="@style/cell"
+            android:text="@string/sample_count"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/editText_sample_frequency"
+            app:layout_constraintTop_toTopOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <View
+        android:id="@+id/hbar_two"
+        style="@style/hbar"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/sample_values" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

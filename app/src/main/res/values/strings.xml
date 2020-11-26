@@ -1,0 +1,23 @@
+<resources>
+    <string name="advertising_off">Not advertising</string>
+    <string name="advertising_unavailable">BLE advertising not available</string>
+    <string name="advertising_status">Advertising Status: %1$s</string>
+    <string name="app_name">FishFinder Simulator</string>
+    <string name="battery">Battery: %1$d</string>
+    <string name="bt_advertising_unsupported">Simulator closing: BLE Advertising Not Supported</string>
+    <string name="bt_not_enabled">Simulator closing: Bluetooth is Not Enabled</string>
+    <string name="bt_not_supported">Simulator closing: Bluetooth Not Supported</string>
+    <string name="depth">Depth: %1$.2gm</string>
+    <string name="devices_connected">%1$d devices connected: %2$s</string>
+    <string name="fish_depth">Fish depth: %1$.2gm</string>
+    <string name="fish_strength">Fish strength: %1$.2g</string>
+    <string name="menu_disconnect_devices">Disconnect Devices</string>
+    <string name="noise">Noise %1$s</string>
+    <string name="range">Range %1$dm</string>
+    <string name="sample_count">Sample count: %1$d</string>
+    <string name="sample_frequency">Sample every:</string>
+    <string name="sample_frequency_spaceholder">0000</string>
+    <string name="sensitivity">Sensitivity %1$d</string>
+    <string name="strength">Strength: %1$.2g</string>
+    <string name="temperature">Temperature: %1$.2g°C</string>
+</resources>
