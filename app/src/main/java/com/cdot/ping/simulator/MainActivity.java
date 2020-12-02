@@ -1,3 +1,21 @@
+/*
+ * Copyright © 2020 C-Dot Consultants
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+ * and associated documentation files (the "Software"), to deal in the Software without restriction,
+ * including without limitation the rights to use, copy, modify, merge, publish, distribute,
+ * sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or
+ * substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+ * BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+ * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 package com.cdot.ping.simulator;
 
 import android.bluetooth.BluetoothAdapter;
@@ -33,6 +51,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.cdot.ping.simulator.databinding.MainActivityBinding;
 
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -201,7 +220,7 @@ public class MainActivity extends AppCompatActivity {
         @Override  // BluetoothGattServerCallback
         public void onServiceAdded(int status, BluetoothGattService service) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                Log.i(TAG,"Service added " + service.getUuid());
+                Log.i(TAG, "Service added " + service.getUuid());
                 for (BluetoothGattCharacteristic blech : service.getCharacteristics()) {
                     Log.d(TAG, "Characteristic " + blech.getUuid());
                 }
@@ -209,7 +228,7 @@ public class MainActivity extends AppCompatActivity {
                 log("Error: Service NOT added " + service.getUuid());
         }
     }
-    
+
     // GAP https://learn.adafruit.com/introduction-to-bluetooth-low-energy/gap
     private AdvertiseData mAdvertiseData;
     private AdvertiseData mAdvertiseScanResponse;
@@ -363,6 +382,7 @@ public class MainActivity extends AppCompatActivity {
         Log.d(TAG, "onOptionsItemSelected");
         if (item.getItemId() == R.id.action_disconnect_devices) {
             Log.d(TAG, "Disconnecting devices...");
+            //mGattServer.getConnectedDevies() is not supported
             for (BluetoothDevice device : mBluetoothManager.getConnectedDevices(BluetoothGattServer.GATT)) {
                 Log.d(TAG, "Devices: " + device.getAddress() + " " + device.getName());
                 mGattServer.cancelConnection(device);
@@ -410,6 +430,8 @@ public class MainActivity extends AppCompatActivity {
             if (mess.length() > 0)
                 mess.append(", ");
             mess.append(dev.getName());
+            Log.d(TAG, "Connected device " + dev.getAddress() + " name " + dev.getName() + " type " + dev.getType() + " bond state " + dev.getBondState() + " uuids " + dev.getUuids());
+            // We can examine them, but we can't seem to release the connection
         }
         final int nConnected = connected.size();
         final String message = mess.toString();

@@ -1,3 +1,21 @@
+/*
+ * Copyright © 2020 C-Dot Consultants
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+ * and associated documentation files (the "Software"), to deal in the Software without restriction,
+ * including without limitation the rights to use, copy, modify, merge, publish, distribute,
+ * sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or
+ * substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+ * BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+ * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 package com.cdot.ping.simulator;
 
 import android.app.Activity;
@@ -47,8 +65,6 @@ public class ServiceFragment extends Fragment {
 
     // GATT
     BluetoothGattService mBluetoothService;
-    private BluetoothGattCharacteristic mSampleCharacteristic;
-    private BluetoothGattCharacteristic mConfigureCharacteristic;
 
     // feet to metres
     private static final double m2ft = 3.2808399;
@@ -68,15 +84,13 @@ public class ServiceFragment extends Fragment {
     private int mRange = 6;
 
     // Sample data
-    public float mDepth; // metres
-    public float mStrength; // strength of bottom signal, 0-100%
-    public float mFishDepth; // metres
-    public float mFishStrength; // Strength of fish return signal
-    public int mBattery; // 0..6
-    public float mTemperature; // celcius
+    public double mDepth; // metres
+    public int mStrength; // strength of bottom signal, 0-255
+    public double mFishDepth; // metres
+    public int mFishStrength; // Strength of fish return signal, 0-16
+    public double mBattery = 6; // 0..6
+    public double mTemperature; // celcius
 
-    // Step variable used for sample generation
-    private int mDeg = 0;
     // Timer used for sample generation
     private Timer mTimer = null;
 
@@ -91,7 +105,8 @@ public class ServiceFragment extends Fragment {
         // Set up Bluetooth
         mBluetoothService = new BluetoothGattService(BTS_CUSTOM, BluetoothGattService.SERVICE_TYPE_PRIMARY);
 
-        mSampleCharacteristic = new BluetoothGattCharacteristic(BTC_CUSTOM_SAMPLE,
+        // Set up sample characteristic
+        BluetoothGattCharacteristic cha = new BluetoothGattCharacteristic(BTC_CUSTOM_SAMPLE,
                 BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_INDICATE,
                 BluetoothGattCharacteristic.PERMISSION_READ);
 
@@ -102,16 +117,17 @@ public class ServiceFragment extends Fragment {
                 (BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE));
         descriptor.setValue(new byte[]{0, 0}); // Ping only ever writes this descriptor, never reads it
 
-        mSampleCharacteristic.addDescriptor(descriptor);
+        cha.addDescriptor(descriptor);
 
-        mBluetoothService.addCharacteristic(mSampleCharacteristic);
+        mBluetoothService.addCharacteristic(cha);
 
-        mConfigureCharacteristic = new BluetoothGattCharacteristic(BTC_CUSTOM_CONFIGURE,
+        // Set up configure characteristic
+        cha = new BluetoothGattCharacteristic(BTC_CUSTOM_CONFIGURE,
                 BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE
                         | BluetoothGattCharacteristic.PROPERTY_WRITE,
                 BluetoothGattCharacteristic.PERMISSION_WRITE);
 
-        mBluetoothService.addCharacteristic(mConfigureCharacteristic);
+        mBluetoothService.addCharacteristic(cha);
 
         mTimer = new Timer();
     }
@@ -138,7 +154,7 @@ public class ServiceFragment extends Fragment {
                     mSampleRate = Integer.parseInt(v.getText().toString());
                     log("Sample rate " + mSampleRate + "ms");
                     // Hide the soft keyboard
-                    InputMethodManager imm = (InputMethodManager)getActivity().getSystemService(Activity.INPUT_METHOD_SERVICE);
+                    InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Activity.INPUT_METHOD_SERVICE);
                     imm.hideSoftInputFromWindow(mBinding.editTextSampleFrequency.getWindowToken(), 0);
                     mBinding.editTextSampleFrequency.clearFocus();
                     return true;
@@ -174,26 +190,29 @@ public class ServiceFragment extends Fragment {
      * Update the bluetooth characteristic stored value
      */
     private void updateSampleCharacteristic() {
+        double depthFt = mDepth * m2ft;
+        double fishDepthFt = mFishDepth * m2ft;
+        double degf = 9 * mTemperature / 5.0 + 32;
+
         byte[] data = new byte[14];
         data[0] = ID0;
         data[1] = ID1;
-
-        data[4] = (mDepth <= 0) ? (byte) 0x8 : 0; // Dry?
-
-        double depthFt = mDepth * m2ft;
+        //data[2]
+        //data[3]
+        data[4] = (mDepth <= 0) ? (byte) 0x8 : 0; // Dry? Only the top bit used
+        //data[5]
         data[6] = (byte) Math.floor(depthFt);
         data[7] = (byte) Math.floor(((depthFt - data[6]) * 100));
-        data[8] = (byte) Math.floor((128 * mStrength / 100)); // 0..128
-        double fishDepthFt = mFishDepth * m2ft;
+        data[8] = (byte) mStrength; // 0..255
         data[9] = (byte) Math.floor(fishDepthFt);
         data[10] = (byte) Math.floor(((fishDepthFt - data[9]) * 100));
-        data[11] = (byte) ((int) Math.floor((16 * mFishStrength / 100)) | (mBattery << 4));
-        double degf = 9 * mTemperature / 5.0 + 32;
+        data[11] = (byte) (mFishStrength | ((int)Math.floor(mBattery) << 4));
         data[12] = (byte) Math.floor(degf);
         data[13] = (byte) Math.floor((degf - data[12]) * 100);
 
-        mSampleCharacteristic.setValue(data);
-        ((MainActivity) getActivity()).sendNotificationToDevices(mSampleCharacteristic);
+        BluetoothGattCharacteristic cha = mBluetoothService.getCharacteristic(BTC_CUSTOM_SAMPLE);
+        cha.setValue(data);
+        ((MainActivity) getActivity()).sendNotificationToDevices(cha);
     }
 
     // A remote client has requested to write to a local characteristic
@@ -233,22 +252,36 @@ public class ServiceFragment extends Fragment {
         log("Configuration sensitivity " + mSensitivity + " noise " + mNoise + " range " + mRange);
 
         // Remaining bytes should be 0
-        updateConfigurationDisplay();
+
+        getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                updateConfigurationDisplay();
+            }
+        });
         return BluetoothGatt.GATT_SUCCESS;
     }
 
     private int mSampleCount = 0;
+    // Step variables used for sample generation
+    private int mDeg = 0;
+    private int mSaw = 1;
 
     // Oscillate when the timer is running
     private void onSampleTimer() {
         mDeg = (mDeg + 1) % 360;
-        mDepth = (float) (RANGE_DEPTH[mRange] / 2 + RANGE_DEPTH[mRange] * Math.sin(mDeg * Math.PI / 180.0) / 2);
-        mStrength += Math.random() - 0.5f;
-        if (mStrength < 0 || mStrength > 100) mStrength = 50;
-        mFishDepth = mDepth / 2;
-        mFishStrength = 0;
-        if (Math.random() < 0.2)
-            mFishStrength = 1 + (float) Math.floor(Math.random() * 4);
+
+        // Depth is a sin wave
+        mDepth = RANGE_DEPTH[mRange] / 2.0 + RANGE_DEPTH[mRange] * Math.sin(mDeg * Math.PI / 180.0) / 2.0;
+
+        // Strength is a sawtooth wave, 0..255
+        if (mStrength == 255) mSaw = -1;
+        if (mStrength == 0) mSaw = 1;
+        mStrength += mSaw;
+
+        mFishDepth = mDepth / 2.0;
+        mFishStrength = mStrength % 16;
+
         mBattery -= 0.01;
         mTemperature = (float) (20.0 + 15.0 * Math.cos(mDeg * Math.PI / 180.0));
 
@@ -283,6 +316,5 @@ public class ServiceFragment extends Fragment {
         log("Stopping sample generator");
         if (mTimer != null)
             mTimer.cancel();
-        mTimer = null;
     }
 }
