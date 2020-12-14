@@ -51,9 +51,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.cdot.ping.simulator.databinding.MainActivityBinding;
 
-import java.lang.reflect.Method;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -73,23 +71,19 @@ public class MainActivity extends AppCompatActivity {
             super.onConnectionStateChange(device, status, newState);
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (newState == BluetoothGatt.STATE_CONNECTED) {
-                    mBluetoothDevices.add(device);
                     updateConnectedDevicesStatus();
-                    log("Connected to " + device.getAddress());
+                    log("Connected to " + device.getName());
                 } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                    log("Disconnected from " + device.getAddress());
-                    mBluetoothDevices.remove(device);
+                    log("Disconnected from " + device.getName());
                     updateConnectedDevicesStatus();
                 } else {
-                    Log.d(TAG, "onConnectionStateChange received new state " + newState);
+                    log("onConnectionStateChange received new state " + newState);
                 }
             } else {
                 // There are too many gatt errors (some of them not even in the documentation) so we just
                 // show the error to the user.
                 final String errorMessage = "onConnectionStateChange error: " + status;
                 log(errorMessage);
-                Log.e(TAG, errorMessage);
-                mBluetoothDevices.remove(device);
                 updateConnectedDevicesStatus();
             }
         }
@@ -179,21 +173,21 @@ public class MainActivity extends AppCompatActivity {
                     status = BluetoothGatt.GATT_SUCCESS;
                     if (characteristic.getUuid() == ServiceFragment.BTC_CUSTOM_SAMPLE) {
                         log("Notifications disabled");
-                        mServiceFragment.stopSampleGenerator();
+                        mServiceFragment.stopSampleGenerators();
                     }
                     descriptor.setValue(value);
                 } else if (supportsNotifications && Arrays.equals(value, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)) {
                     status = BluetoothGatt.GATT_SUCCESS;
                     if (characteristic.getUuid() == ServiceFragment.BTC_CUSTOM_SAMPLE) {
                         log("Notifications enabled");
-                        mServiceFragment.startSampleGenerator();
+                        mServiceFragment.startSampleGenerators();
                     }
                     descriptor.setValue(value);
                 } else if (supportsIndications && Arrays.equals(value, BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)) {
                     status = BluetoothGatt.GATT_SUCCESS;
                     if (characteristic.getUuid() == ServiceFragment.BTC_CUSTOM_SAMPLE) {
                         log("Indications enabled");
-                        mServiceFragment.startSampleGenerator();
+                        mServiceFragment.startSampleGenerators();
                     }
                     descriptor.setValue(value);
                 } else {
@@ -220,10 +214,11 @@ public class MainActivity extends AppCompatActivity {
         @Override  // BluetoothGattServerCallback
         public void onServiceAdded(int status, BluetoothGattService service) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                Log.i(TAG, "Service added " + service.getUuid());
+                String mess = "Service added " + service.getUuid();
                 for (BluetoothGattCharacteristic blech : service.getCharacteristics()) {
-                    Log.d(TAG, "Characteristic " + blech.getUuid());
+                    mess += ", " + blech.getUuid();
                 }
+                log(mess);
             } else
                 log("Error: Service NOT added " + service.getUuid());
         }
@@ -267,13 +262,12 @@ public class MainActivity extends AppCompatActivity {
         @Override // AdvertiseCallback
         public void onStartSuccess(AdvertiseSettings settingsInEffect) {
             super.onStartSuccess(settingsInEffect);
-            Log.v(TAG, "Broadcasting");
+            log("Advertising");
             mBinding.textViewAdvertisingStatus.setText(getResources().getString(R.string.advertising_status, "OK"));
         }
     };
 
     // GATT
-    private HashSet<BluetoothDevice> mBluetoothDevices = new HashSet<>();
     private BluetoothManager mBluetoothManager;
     private BluetoothAdapter mBluetoothAdapter;
     private BluetoothGattServer mGattServer;
@@ -288,6 +282,7 @@ public class MainActivity extends AppCompatActivity {
     private int logLines = 0;
 
     void log(final String line) {
+        Log.d(TAG, line);
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -295,7 +290,7 @@ public class MainActivity extends AppCompatActivity {
                 if (logLines > 500) {
                     cur = cur.replaceFirst("^.*?\n", "");
                 }
-                mBinding.log.setText(cur + "\n" + line);
+                mBinding.log.setText(String.format("%s\n%s", cur, line));
             }
         });
     }
@@ -364,6 +359,7 @@ public class MainActivity extends AppCompatActivity {
 
         if (mBluetoothAdapter.isMultipleAdvertisementSupported()) {
             mAdvertiser = mBluetoothAdapter.getBluetoothLeAdvertiser();
+            log("Start advertising");
             mAdvertiser.startAdvertising(mAdvertiseSettings, mAdvertiseData, mAdvertiseScanResponse, mAdvertiseCallback);
         } else {
             mBinding.textViewAdvertisingStatus.setText(R.string.advertising_unavailable);
@@ -396,23 +392,28 @@ public class MainActivity extends AppCompatActivity {
     protected void onStop() {
         Log.d(TAG, "onStop");
         super.onStop();
-        if (mGattServer != null) {
-            mGattServer.close();
-        }
         if (mBluetoothAdapter.isEnabled() && mAdvertiser != null) {
             // If stopAdvertising() gets called before close() a null
             // pointer exception is raised.
             mAdvertiser.stopAdvertising(mAdvertiseCallback);
+            mAdvertiser = null;
         }
-        resetStatusViews();
+        if (mGattServer != null) {
+            for (BluetoothDevice device : mBluetoothManager.getConnectedDevices(BluetoothGattServer.GATT)) {
+                mGattServer.cancelConnection(device);
+            }
+            mGattServer.clearServices();
+            mGattServer.close();
+        }
     }
 
     public void sendNotificationToDevices(BluetoothGattCharacteristic characteristic) {
         boolean indicate = (characteristic.getProperties()
                 & BluetoothGattCharacteristic.PROPERTY_INDICATE)
                 == BluetoothGattCharacteristic.PROPERTY_INDICATE;
-        for (BluetoothDevice device : mBluetoothDevices) {
-            //Log.d(TAG, "send notification to " + device.getAddress());
+        List<BluetoothDevice> connected = mBluetoothManager.getConnectedDevices(BluetoothGattServer.GATT);
+        for (BluetoothDevice device : connected) {
+            // Log.d(TAG, "send notification to " + device.getAddress());
             // true for indication (acknowledge) and false for notification (unacknowledge).
             mGattServer.notifyCharacteristicChanged(device, characteristic, indicate);
         }
@@ -430,7 +431,7 @@ public class MainActivity extends AppCompatActivity {
             if (mess.length() > 0)
                 mess.append(", ");
             mess.append(dev.getName());
-            Log.d(TAG, "Connected device " + dev.getAddress() + " name " + dev.getName() + " type " + dev.getType() + " bond state " + dev.getBondState() + " uuids " + dev.getUuids());
+            Log.d(TAG, "Connected device " + dev.getAddress() + " name " + dev.getName() + " type " + dev.getType() + " paired " + dev.getBondState());
             // We can examine them, but we can't seem to release the connection
         }
         final int nConnected = connected.size();
@@ -442,7 +443,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         if (nConnected == 0 && mServiceFragment != null)
-            mServiceFragment.stopSampleGenerator();
+            mServiceFragment.stopSampleGenerators();
     }
 
     private void ensureBleFeaturesAvailable() {

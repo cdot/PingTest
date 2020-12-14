@@ -32,13 +32,18 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.fragment.app.Fragment;
 
 import com.cdot.ping.simulator.databinding.ServiceFragmentBinding;
 
+import org.jetbrains.annotations.NotNull;
+
+import java.nio.ByteBuffer;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.UUID;
@@ -50,7 +55,18 @@ public class ServiceFragment extends Fragment {
     // ID bytes that characterise the fishfinder
     static final byte ID0 = 83;
     static final byte ID1 = 70;
+    // range (metres) indexed by range
+    static final int[] RANGE_DEPTH = {
+            3, 6, 9, 18, 24, 36, 36
+    };
+    static final String[] NOISES = {
+            "Off", "Low", "Medium", "High"
+    };
+
     private static final byte COMMAND_CONFIGURE = 1;
+
+    // feet to metres
+    private static final double m2ft = 3.2808399;
 
     // Bluetooth services BTS_*
     // Bluetooth characteristics BTC_*
@@ -62,63 +78,67 @@ public class ServiceFragment extends Fragment {
     // Characteristic used for sending packets to the device. The only command I can
     // find that FishFinder devices support is "configure".
     static UUID BTC_CUSTOM_CONFIGURE = UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb");
+    // Simulation of location
+    static UUID BTC_CUSTOM_LOCATION = UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb");
+    // Sample data
+    public boolean mDry;
+    public double mBattery = 6; // 0..6
+    public double mTemperature; // celcius
 
     // GATT
     BluetoothGattService mBluetoothService;
-
-    // feet to metres
-    private static final double m2ft = 3.2808399;
-
-    // range (metres) indexed by range
-    static final int[] RANGE_DEPTH = {
-            3, 6, 9, 18, 24, 36, 36
-    };
-
-    static final String[] NOISES = {
-            "Off", "Low", "Medium", "High"
-    };
-
+    // UI
+    ServiceFragmentBinding mBinding;
+    double mTargetSonarRate = 10; // Hz
+    double mTargetLocRate = 0.3; // Hz
     // Current device configuration
     private int mSensitivity = 50;
     private int mNoise = 0;
     private int mRange = 6;
+    private Timer mSonarTimer = null;
+    private double mAveSonarRate = mTargetSonarRate; // rolling average sampling rate
+    private int mTotalSonarCount = 0;
+    private long mLastSonarTime = 0;
+    private Timer mLocTimer = null;
+    private double mAveLocRate = mTargetLocRate; // rolling average sampling rate
+    private int mTotalLocCount = 0;
+    private long mLastLocTime = 0;
 
-    // Sample data
-    public double mDepth; // metres
-    public int mStrength; // strength of bottom signal, 0-255
-    public double mFishDepth; // metres
-    public int mFishStrength; // Strength of fish return signal, 0-16
-    public double mBattery = 6; // 0..6
-    public double mTemperature; // celcius
+    private boolean mAlwaysOn = false;
 
-    // Timer used for sample generation
-    private Timer mTimer = null;
+    private Sample mSample;
 
-    // UI
-    ServiceFragmentBinding mBinding;
-
-    static final int DEFAULT_SAMPLE_RATE = 5000; // ms
-
-    int mSampleRate = DEFAULT_SAMPLE_RATE;
+    private Simulator mSimulator;
 
     public ServiceFragment() {
+        mSimulator = new Simulator();
+
         // Set up Bluetooth
         mBluetoothService = new BluetoothGattService(BTS_CUSTOM, BluetoothGattService.SERVICE_TYPE_PRIMARY);
+        log("Created service");
 
-        // Set up sample characteristic
-        BluetoothGattCharacteristic cha = new BluetoothGattCharacteristic(BTC_CUSTOM_SAMPLE,
-                BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_INDICATE,
-                BluetoothGattCharacteristic.PERMISSION_READ);
-
+        // Set up sample characteristics
+        BluetoothGattCharacteristic cha;
         BluetoothGattDescriptor descriptor;
 
+        cha = new BluetoothGattCharacteristic(BTC_CUSTOM_SAMPLE,
+                BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_INDICATE,
+                BluetoothGattCharacteristic.PERMISSION_READ);
         // Descriptor written with ENABLE_NOTIFICATION_VALUE
         descriptor = new BluetoothGattDescriptor(MainActivity.CLIENT_CHARACTERISTIC_CONFIGURATION_UUID,
                 (BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE));
         descriptor.setValue(new byte[]{0, 0}); // Ping only ever writes this descriptor, never reads it
 
         cha.addDescriptor(descriptor);
+        mBluetoothService.addCharacteristic(cha);
 
+        cha = new BluetoothGattCharacteristic(BTC_CUSTOM_LOCATION,
+                BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_INDICATE,
+                BluetoothGattCharacteristic.PERMISSION_READ);
+        descriptor = new BluetoothGattDescriptor(MainActivity.CLIENT_CHARACTERISTIC_CONFIGURATION_UUID,
+                (BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE));
+        descriptor.setValue(new byte[]{0, 0}); // Ping only ever writes this descriptor, never reads it
+        cha.addDescriptor(descriptor);
         mBluetoothService.addCharacteristic(cha);
 
         // Set up configure characteristic
@@ -126,92 +146,177 @@ public class ServiceFragment extends Fragment {
                 BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE
                         | BluetoothGattCharacteristic.PROPERTY_WRITE,
                 BluetoothGattCharacteristic.PERMISSION_WRITE);
-
         mBluetoothService.addCharacteristic(cha);
+        log("Added characteristics");
 
-        mTimer = new Timer();
+        startSampleGenerators();
+        mAlwaysOn = true;
+    }
+
+    private static byte[] double2byteArray(double number) {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(Double.BYTES);
+        byteBuffer.putDouble(number);
+        return byteBuffer.array();
     }
 
     private void log(String lin) {
-        ((MainActivity) getActivity()).log(lin);
+        MainActivity act = ((MainActivity) getActivity());
+        if (act != null)
+            act.log(lin);
+        else
+            Log.d(TAG, lin);
     }
 
     @Override // Fragment
-    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+    public View onCreateView(@NotNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         //Log.d(TAG, "onCreateView");
         mBinding = ServiceFragmentBinding.inflate(inflater, container, false);
 
-        mBinding.editTextSampleFrequency.setText(Integer.toString(mSampleRate));
-        mBinding.editTextSampleFrequency.setOnEditorActionListener(new EditText.OnEditorActionListener() {
+        mBinding.sonarRateET.setText(Double.toString(mTargetSonarRate));
+        mBinding.sonarRateET.setOnEditorActionListener(new EditText.OnEditorActionListener() {
             @Override
             public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
                 // Identifier of the action. This will be either the identifier you supplied,
                 // or EditorInfo.IME_NULL if being called due to the enter key being pressed.
                 if (actionId == EditorInfo.IME_ACTION_SEARCH
+                        || actionId == EditorInfo.IME_ACTION_NEXT
                         || actionId == EditorInfo.IME_ACTION_DONE
-                        || event.getAction() == KeyEvent.ACTION_DOWN
-                        && event.getKeyCode() == KeyEvent.KEYCODE_ENTER) {
-                    mSampleRate = Integer.parseInt(v.getText().toString());
-                    log("Sample rate " + mSampleRate + "ms");
-                    // Hide the soft keyboard
-                    InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Activity.INPUT_METHOD_SERVICE);
-                    imm.hideSoftInputFromWindow(mBinding.editTextSampleFrequency.getWindowToken(), 0);
-                    mBinding.editTextSampleFrequency.clearFocus();
+                        || event != null && event.getAction() == KeyEvent.ACTION_DOWN
+                        && event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER) {
+                    try {
+                        mTargetSonarRate = Double.parseDouble(v.getText().toString());
+                        mLastSonarTime = 0;
+                        log("Sample rate " + mTargetSonarRate + "Hz");
+                        // Hide the soft keyboard
+                        InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Activity.INPUT_METHOD_SERVICE);
+                        imm.hideSoftInputFromWindow(mBinding.sonarRateET.getWindowToken(), 0);
+                        mBinding.sonarRateET.clearFocus();
+                    } catch (NumberFormatException nfe) {
+                        Toast.makeText(getActivity(), nfe.toString(), Toast.LENGTH_SHORT);
+                        return false;
+                    }
                     return true;
                 }
                 // Return true if you have consumed the action, else false.
                 return false;
             }
         });
+
+        mBinding.locRateET.setText(Double.toString(mTargetLocRate));
+        mBinding.locRateET.setOnEditorActionListener(new EditText.OnEditorActionListener() {
+            @Override
+            public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
+                // Identifier of the action. This will be either the identifier you supplied,
+                // or EditorInfo.IME_NULL if being called due to the enter key being pressed.
+                if (actionId == EditorInfo.IME_ACTION_SEARCH
+                        || actionId == EditorInfo.IME_ACTION_NEXT
+                        || actionId == EditorInfo.IME_ACTION_DONE
+                        || event != null && event.getAction() == KeyEvent.ACTION_DOWN
+                        && event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER) {
+                    try {
+                        mTargetLocRate = Double.parseDouble(v.getText().toString());
+                        mLastLocTime = 0;
+                        log("Sample rate " + mTargetLocRate + "Hz");
+                        // Hide the soft keyboard
+                        InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Activity.INPUT_METHOD_SERVICE);
+                        imm.hideSoftInputFromWindow(mBinding.locRateET.getWindowToken(), 0);
+                        mBinding.locRateET.clearFocus();
+                    } catch (NumberFormatException nfe) {
+                        Toast.makeText(getActivity(), nfe.toString(), Toast.LENGTH_SHORT);
+                        return false;
+                    }
+                    return true;
+                }
+                // Return true if you have consumed the action, else false.
+                return false;
+            }
+        });
+
+        mBinding.isDry.setChecked(mDry);
+        mBinding.isDry.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                mDry = isChecked;
+            }
+        });
         updateConfigurationDisplay();
-        updateSampleDisplay();
+        updateSonarDisplay();
+        updateLocDisplay();
         return mBinding.getRoot();
     }
 
     private void updateConfigurationDisplay() {
         Resources r = getResources();
-        mBinding.textViewSensitivity.setText(r.getString(R.string.sensitivity, mSensitivity));
-        mBinding.textViewNoise.setText(r.getString(R.string.noise, NOISES[mNoise]));
-        mBinding.textViewRange.setText(r.getString(R.string.range, RANGE_DEPTH[mRange]));
+        mBinding.sensitivityTV.setText(r.getString(R.string.sensitivity, mSensitivity));
+        mBinding.noiseTV.setText(r.getString(R.string.noise, NOISES[mNoise]));
+        mBinding.rangeTV.setText(r.getString(R.string.range, RANGE_DEPTH[mRange]));
     }
 
-    private void updateSampleDisplay() {
+    private void updateSonarDisplay() {
+        Sample sample = mSimulator.getSample();
         Resources r = getResources();
-        mBinding.textViewDepth.setText(r.getString(R.string.depth, mDepth));
-        mBinding.textViewStrength.setText(r.getString(R.string.strength, mStrength));
-        mBinding.textViewFishDepth.setText(r.getString(R.string.fish_depth, mFishDepth));
-        mBinding.textViewFishStrength.setText(r.getString(R.string.fish_strength, mFishStrength));
-        mBinding.textViewBattery.setText(r.getString(R.string.battery, mBattery));
-        mBinding.textViewTemperature.setText(r.getString(R.string.temperature, mTemperature));
-        mBinding.textViewSampleCount.setText(r.getString(R.string.sample_count, mSampleCount));
+        mBinding.depthTV.setText(r.getString(R.string.depth, sample.depth));
+        mBinding.strengthTV.setText(r.getString(R.string.strength, sample.strength));
+        mBinding.fishDepthTV.setText(r.getString(R.string.fish_depth, sample.fishDepth));
+        mBinding.fishStrengthTV.setText(r.getString(R.string.fish_strength, sample.fishStrength));
+        mBinding.battTV.setText(r.getString(R.string.battery, mBattery));
+        mBinding.tempTV.setText(r.getString(R.string.temperature, sample.temperature));
+        mBinding.sonarRateTV.setText(r.getString(R.string.freq, mAveSonarRate));
+    }
+
+    private void updateLocDisplay() {
+        Sample sample = mSimulator.getSample();
+        Resources r = getResources();
+        mBinding.latTV.setText(r.getString(R.string.lat, sample.latitude));
+        mBinding.lonTV.setText(r.getString(R.string.lon, sample.longitude));
+        mBinding.locRateTV.setText(r.getString(R.string.freq, mAveLocRate));
     }
 
     /**
      * Update the bluetooth characteristic stored value
      */
-    private void updateSampleCharacteristic() {
-        double depthFt = mDepth * m2ft;
-        double fishDepthFt = mFishDepth * m2ft;
-        double degf = 9 * mTemperature / 5.0 + 32;
+    private synchronized void updateSampleCharacteristic() {
+        Sample sample = mSimulator.getSample();
+        double depthFt = sample.depth * m2ft;
+        double fishDepthFt = sample.fishDepth * m2ft;
+        double degf = 9 * sample.temperature / 5.0 + 32;
 
-        byte[] data = new byte[14];
+        byte[] data = new byte[18];
         data[0] = ID0;
         data[1] = ID1;
-        //data[2]
-        //data[3]
-        data[4] = (mDepth <= 0) ? (byte) 0x8 : 0; // Dry? Only the top bit used
-        //data[5]
+        data[2] = 0;
+        data[3] = 0;
+        data[4] = mDry ? (byte) 0x8 : 0; // Dry. Only the top bit used
+        data[5] = 9;
         data[6] = (byte) Math.floor(depthFt);
         data[7] = (byte) Math.floor(((depthFt - data[6]) * 100));
-        data[8] = (byte) mStrength; // 0..255
+        data[8] = (byte) sample.strength; // 0..255
         data[9] = (byte) Math.floor(fishDepthFt);
         data[10] = (byte) Math.floor(((fishDepthFt - data[9]) * 100));
-        data[11] = (byte) (mFishStrength | ((int)Math.floor(mBattery) << 4));
+        data[11] = (byte) (sample.fishStrength | ((int) Math.floor(mBattery) << 4));
         data[12] = (byte) Math.floor(degf);
         data[13] = (byte) Math.floor((degf - data[12]) * 100);
+        data[14] = 0;
+        data[15] = 0;
+        data[16] = 0;
+        int checksum = 0;
+        for (int i = 0; i < 17; i++)
+            checksum += data[i];
+        data[17] = (byte) (checksum & 0xFF);
 
         BluetoothGattCharacteristic cha = mBluetoothService.getCharacteristic(BTC_CUSTOM_SAMPLE);
         cha.setValue(data);
+        ((MainActivity) getActivity()).sendNotificationToDevices(cha);
+    }
+
+    private void updateLocationCharacteristic() {
+        Sample sample = mSimulator.getSample();
+        byte[] buff = new byte[2 * Double.BYTES];
+        System.arraycopy(double2byteArray(sample.latitude), 0, buff, 0, Double.BYTES);
+        System.arraycopy(double2byteArray(sample.longitude), 0, buff, Double.BYTES, Double.BYTES);
+        BluetoothGattCharacteristic cha = mBluetoothService.getCharacteristic(BTC_CUSTOM_LOCATION);
+        // BLE allows a max of 20 bytes, 2 doubles is 16
+        cha.setValue(buff);
         ((MainActivity) getActivity()).sendNotificationToDevices(cha);
     }
 
@@ -251,8 +356,6 @@ public class ServiceFragment extends Fragment {
         mRange = value[8];
         log("Configuration sensitivity " + mSensitivity + " noise " + mNoise + " range " + mRange);
 
-        // Remaining bytes should be 0
-
         getActivity().runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -262,59 +365,118 @@ public class ServiceFragment extends Fragment {
         return BluetoothGatt.GATT_SUCCESS;
     }
 
-    private int mSampleCount = 0;
-    // Step variables used for sample generation
-    private int mDeg = 0;
-    private int mSaw = 1;
-
     // Oscillate when the timer is running
-    private void onSampleTimer() {
-        mDeg = (mDeg + 1) % 360;
+    private synchronized void onSonarTimer() {
 
-        // Depth is a sin wave
-        mDepth = RANGE_DEPTH[mRange] / 2.0 + RANGE_DEPTH[mRange] * Math.sin(mDeg * Math.PI / 180.0) / 2.0;
+        Sample sample = mSimulator.getSample();
+        
+        //sample.depth = ft2m * simulationDepths[sisample.depthPtr];
+        // Simulate depths using a Fourier transform of a genuine series of 45 unique points
+        // over 3 minutes, generating data in the range 0..36
+        /*
+        float x = (System.currentTimeMillis() / (3 * 60 * 1000)) % 45;
+        
+        sample.depth = 34.090831 / 2
+                - 13.649756 * Math.cos(1 * 0.1428 * x) - 3.703815 * Math.sin(1 * 0.2428 * x)
+                - 1.021368 * Math.cos(2 * 0.1428 * x) + 2.330314 * Math.sin(2 * 0.1428 * x)
+                + 0.384317 * Math.cos(3 * 0.1428 * x) - 1.768034 * Math.sin(3 * 0.1428 * x)
+                - 2.280157 * Math.cos(4 * 0.1428 * x) + 2.096788 * Math.sin(4 * 0.1428 * x)
+                - 0.744763 * Math.cos(5 * 0.1428 * x) - 0.066924 * Math.sin(5 * 0.1428 * x);*/
 
-        // Strength is a sawtooth wave, 0..255
-        if (mStrength == 255) mSaw = -1;
-        if (mStrength == 0) mSaw = 1;
-        mStrength += mSaw;
 
-        mFishDepth = mDepth / 2.0;
-        mFishStrength = mStrength % 16;
+        /*// Strength is a sin wave, , 0..255
+        if (sample.strength == 255) mSaw = -1;
+        if (sample.strength == 0) mSaw = 1;
+        sample.strength += mSaw;
+
+        sample.fishDepth = sample.depth / 2.0;
+        sample.fishStrength = sample.strength % 16;*/
 
         mBattery -= 0.01;
-        mTemperature = (float) (20.0 + 15.0 * Math.cos(mDeg * Math.PI / 180.0));
+        long now = System.currentTimeMillis();
+        if (mLastSonarTime == 0) {
+            mAveSonarRate = mTargetSonarRate;
+        } else {
+            double samplingRate = 1000.0 / (now - mLastSonarTime);
+            //Log.d(TAG, "Rate " + (now - mLastSampleTime) + " " + samplingRate);
+            mAveSonarRate = ((mAveSonarRate * mTotalSonarCount) + samplingRate) / (mTotalSonarCount + 1);
+            mTotalSonarCount++;
+        }
+        mLastSonarTime = now;
 
-        mSampleCount++;
+        TimerTask task = new TimerTask() {
+            public void run() {
+                onSonarTimer();
+            }
+        };
+        mSonarTimer = new Timer();
+        mSonarTimer.schedule(task, (int) (1000.0 / mTargetSonarRate));
 
         // Notify bluetooth listeners
         updateSampleCharacteristic();
+
         getActivity().runOnUiThread(new Runnable() {
             public void run() {
-                updateSampleDisplay();
+                updateSonarDisplay();
             }
         });
-        TimerTask task = new TimerTask() {
-            public void run() {
-                onSampleTimer();
-            }
-        };
-        mTimer.schedule(task, mSampleRate); // ms
     }
 
-    void startSampleGenerator() {
-        log("Starting sample generator");
+    private synchronized void onLocationTimer() {
+        mLocTimer = new Timer();
         TimerTask task = new TimerTask() {
             public void run() {
-                onSampleTimer();
+                onLocationTimer();
             }
         };
-        mTimer.schedule(task, mSampleRate); // ms
+        mLocTimer.schedule(task, (int) (1000.0 / (mTargetSonarRate / 10)));
+
+        // Notify bluetooth listeners
+        updateLocationCharacteristic();
+
+        long now = System.currentTimeMillis();
+        if (mLastLocTime == 0) {
+            mAveLocRate = mTargetLocRate;
+        } else {
+            double samplingRate = 1000.0 / (now - mLastLocTime);
+            //Log.d(TAG, "Rate " + (now - mLastSampleTime) + " " + samplingRate);
+            mAveLocRate = ((mAveLocRate * mTotalLocCount) + samplingRate) / (mTotalLocCount + 1);
+            mTotalLocCount++;
+        }
+        mLastSonarTime = now;
+
+        getActivity().runOnUiThread(new Runnable() {
+            public void run() {
+                updateLocDisplay();
+            }
+        });
     }
 
-    void stopSampleGenerator() {
-        log("Stopping sample generator");
-        if (mTimer != null)
-            mTimer.cancel();
+    void startSampleGenerators() {
+        if (mAlwaysOn)
+            return;
+        stopSampleGenerators();
+        Timer startTimer = new Timer();
+        TimerTask task = new TimerTask() {
+            public void run() {
+                log("Starting sample generator");
+                onSonarTimer();
+                onLocationTimer();
+            }
+        };
+        startTimer.schedule(task, 1000);
+        mAlwaysOn = true;
+    }
+
+    void stopSampleGenerators() {
+        if (mAlwaysOn)
+            return;
+        if (mSonarTimer != null) {
+            log("Stopping sample generator");
+            mSonarTimer.cancel();
+            mLocTimer.cancel();
+            mSonarTimer = null;
+            mLocTimer = null;
+        }
     }
 }

@@ -5,6 +5,14 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
+    <!-- Dummy element to "grab" the input focus so we don't get a soft keyboard on startup.
+     @see https://stackoverflow.com/questions/1555109/how-to-stop-edittext-from-gaining-focus-at-activity-startup-in-android -->
+    <LinearLayout
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:layout_width="0px"
+        android:layout_height="0px"/>
+
     <LinearLayout
         android:layout_width="match_parent"
         android:orientation="vertical"

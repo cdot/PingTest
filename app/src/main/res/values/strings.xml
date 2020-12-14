@@ -11,13 +11,18 @@
     <string name="devices_connected">%1$d devices connected: %2$s</string>
     <string name="fish_depth">Fish depth: %1$.2gm</string>
     <string name="fish_strength">Fish strength: %1$d</string>
+    <string name="hz">Hz</string>
     <string name="menu_disconnect_devices">Disconnect Devices</string>
     <string name="noise">Noise %1$s</string>
     <string name="range">Range %1$dm</string>
-    <string name="sample_count">Sample count: %1$d</string>
-    <string name="sample_frequency">Sample every:</string>
-    <string name="sample_frequency_spaceholder">0000</string>
+    <string name="sample_count">Samples %1$d</string>
+    <string name="sonar_frequency">Sonar Freq:</string>
+    <string name="freq">Hz (%1$.2gHz)</string>
+    <string name="location_frequency">Location Freq:</string>
     <string name="sensitivity">Sensitivity %1$d</string>
     <string name="strength">Strength: %1$d</string>
     <string name="temperature">Temperature: %1$.2g°C</string>
+    <string name="dry">Dry</string>
+    <string name="lat">Lat: %.5g</string>
+    <string name="lon">Lon: %.5g</string>
 </resources>
