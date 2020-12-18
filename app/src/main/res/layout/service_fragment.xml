@@ -90,20 +90,11 @@
             android:id="@+id/strengthTV"
             style="@style/cell"
             android:text="@string/strength"
-            app:layout_constraintEnd_toStartOf="@+id/is_dry"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@+id/depthTV"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
-        <CheckBox
-            android:id="@+id/is_dry"
-            style="@style/cell"
-            android:text="@string/dry"
-            android:textStyle="bold"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@id/strengthTV"
-            app:layout_constraintTop_toTopOf="parent" />
     </androidx.constraintlayout.widget.ConstraintLayout>
 
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -204,7 +195,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/sonar_settings"
-        app:layout_constraintBottom_toTopOf="@id/hbar_two">
+        app:layout_constraintBottom_toTopOf="@id/options">
 
         <TextView
             android:id="@+id/lflbl"
@@ -236,12 +227,52 @@
             app:layout_constraintTop_toTopOf="parent" />
     </androidx.constraintlayout.widget.ConstraintLayout>
 
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/options"
+        style="@style/row"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/location_settings"
+        app:layout_constraintBottom_toTopOf="@id/hbar_two">
+
+        <CheckBox
+            android:id="@+id/isSilent"
+            style="@style/cell"
+            android:text="@string/silent"
+            android:textStyle="bold"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/isDry"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <CheckBox
+            android:id="@+id/isDry"
+            style="@style/cell"
+            android:text="@string/dry"
+            android:textStyle="bold"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/sampleSource"
+            app:layout_constraintStart_toEndOf="@id/isSilent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <Spinner
+            android:id="@+id/sampleSource"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:entries="@array/sampleSources"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/isDry"
+            app:layout_constraintTop_toTopOf="parent">
+        </Spinner>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
     <View
         android:id="@+id/hbar_two"
         style="@style/hbar"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/location_settings" />
+        app:layout_constraintTop_toBottomOf="@id/options" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

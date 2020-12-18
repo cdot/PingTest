@@ -32,6 +32,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.AdapterView;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -65,53 +66,50 @@ public class ServiceFragment extends Fragment {
 
     private static final byte COMMAND_CONFIGURE = 1;
 
-    // feet to metres
-    private static final double m2ft = 3.2808399;
-
     // Bluetooth services BTS_*
     // Bluetooth characteristics BTC_*
     // Custom service that the fishfinder implements
     static UUID BTS_CUSTOM = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb");
     // Characteristic for samples, notified. Note that FishFinder packages battery state in the
     // sample packet and there is no separate characteristic
-    static UUID BTC_CUSTOM_SAMPLE = UUID.fromString("0000fff1-0000-1000-8000-00805f9b34fb");
+    static UUID BTC_SAMPLE = UUID.fromString("0000fff1-0000-1000-8000-00805f9b34fb");
     // Characteristic used for sending packets to the device. The only command I can
     // find that FishFinder devices support is "configure".
-    static UUID BTC_CUSTOM_CONFIGURE = UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb");
+    static UUID BTC_CONFIGURE = UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb");
     // Simulation of location
-    static UUID BTC_CUSTOM_LOCATION = UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb");
+    static UUID BTC_LOCATION = UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb");
     // Sample data
-    public boolean mDry;
-    public double mBattery = 6; // 0..6
-    public double mTemperature; // celcius
+    public boolean mDry = false, mSilent = false;
 
     // GATT
     BluetoothGattService mBluetoothService;
     // UI
     ServiceFragmentBinding mBinding;
-    double mTargetSonarRate = 10; // Hz
-    double mTargetLocRate = 0.3; // Hz
+    double mTargetSonarRate = 8; // Hz
+    double mTargetLocRate = 1; // Hz
     // Current device configuration
     private int mSensitivity = 50;
     private int mNoise = 0;
     private int mRange = 6;
     private Timer mSonarTimer = null;
-    private double mAveSonarRate = mTargetSonarRate; // rolling average sampling rate
-    private int mTotalSonarCount = 0;
-    private long mLastSonarTime = 0;
     private Timer mLocTimer = null;
-    private double mAveLocRate = mTargetLocRate; // rolling average sampling rate
-    private int mTotalLocCount = 0;
-    private long mLastLocTime = 0;
+
+    private double mAveSonarRate; // rolling average sampling rate
+    private int mTotalSonarCount;
+    private long mLastSonarTime;
+    private double mAveLocRate; // rolling average sampling rate
+    private int mTotalLocCount;
+    private long mLastLocTime;
 
     private boolean mAlwaysOn = false;
 
     private Sample mSample;
 
-    private Simulator mSimulator;
+    private SampleGenerator mSampleGenerator;
 
     public ServiceFragment() {
-        mSimulator = new Simulator();
+        mSampleGenerator = new DemoSampleGenerator();
+        resetSampleCounters();
 
         // Set up Bluetooth
         mBluetoothService = new BluetoothGattService(BTS_CUSTOM, BluetoothGattService.SERVICE_TYPE_PRIMARY);
@@ -121,7 +119,7 @@ public class ServiceFragment extends Fragment {
         BluetoothGattCharacteristic cha;
         BluetoothGattDescriptor descriptor;
 
-        cha = new BluetoothGattCharacteristic(BTC_CUSTOM_SAMPLE,
+        cha = new BluetoothGattCharacteristic(BTC_SAMPLE,
                 BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_INDICATE,
                 BluetoothGattCharacteristic.PERMISSION_READ);
         // Descriptor written with ENABLE_NOTIFICATION_VALUE
@@ -132,7 +130,7 @@ public class ServiceFragment extends Fragment {
         cha.addDescriptor(descriptor);
         mBluetoothService.addCharacteristic(cha);
 
-        cha = new BluetoothGattCharacteristic(BTC_CUSTOM_LOCATION,
+        cha = new BluetoothGattCharacteristic(BTC_LOCATION,
                 BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_INDICATE,
                 BluetoothGattCharacteristic.PERMISSION_READ);
         descriptor = new BluetoothGattDescriptor(MainActivity.CLIENT_CHARACTERISTIC_CONFIGURATION_UUID,
@@ -142,7 +140,7 @@ public class ServiceFragment extends Fragment {
         mBluetoothService.addCharacteristic(cha);
 
         // Set up configure characteristic
-        cha = new BluetoothGattCharacteristic(BTC_CUSTOM_CONFIGURE,
+        cha = new BluetoothGattCharacteristic(BTC_CONFIGURE,
                 BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE
                         | BluetoothGattCharacteristic.PROPERTY_WRITE,
                 BluetoothGattCharacteristic.PERMISSION_WRITE);
@@ -151,6 +149,15 @@ public class ServiceFragment extends Fragment {
 
         startSampleGenerators();
         mAlwaysOn = true;
+    }
+
+    private void resetSampleCounters() {
+        mAveSonarRate = mTargetSonarRate; // rolling average sampling rate
+        mTotalSonarCount = 1;
+        mLastSonarTime = 0;
+        mAveLocRate = mTargetLocRate; // rolling average sampling rate
+        mTotalLocCount = 0;
+        mLastLocTime = 0;
     }
 
     private static byte[] double2byteArray(double number) {
@@ -239,6 +246,58 @@ public class ServiceFragment extends Fragment {
                 mDry = isChecked;
             }
         });
+
+        mBinding.isSilent.setChecked(mSilent);
+        mBinding.isDry.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                mSilent = isChecked;
+            }
+        });
+
+        mBinding.sampleSource.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            /**
+             * <p>Callback method to be invoked when an item in this view has been
+             * selected. This callback is invoked only when the newly selected
+             * position is different from the previously selected position or if
+             * there was no selected item.</p>
+             * <p>
+             * Implementers can call getItemAtPosition(position) if they need to access the
+             * data associated with the selected item.
+             *
+             * @param parent   The AdapterView where the selection happened
+             * @param view     The view within the AdapterView that was clicked
+             * @param position The position of the view in the adapter
+             * @param id       The row id of the item that is selected
+             */
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                switch (position) {
+                    default:
+                    case 0: // Demo
+                        mSampleGenerator = new DemoSampleGenerator();
+                        break;
+                    case 1: // Wave
+                        mSampleGenerator = new WaveSampleGenerator();
+                        break;
+                    case 2: // Flatline
+                        mSampleGenerator = new FlatlineSampleGenerator();
+                }
+                resetSampleCounters();
+            }
+
+            /**
+             * Callback method to be invoked when the selection disappears from this
+             * view. The selection can disappear for instance when touch is activated
+             * or when the adapter becomes empty.
+             *
+             * @param parent The AdapterView that now contains no selected item.
+             */
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+
+            }
+        });
         updateConfigurationDisplay();
         updateSonarDisplay();
         updateLocDisplay();
@@ -253,19 +312,19 @@ public class ServiceFragment extends Fragment {
     }
 
     private void updateSonarDisplay() {
-        Sample sample = mSimulator.getSample();
+        Sample sample = mSampleGenerator.getSample();
         Resources r = getResources();
-        mBinding.depthTV.setText(r.getString(R.string.depth, sample.depth));
+        mBinding.depthTV.setText(r.getString(R.string.depth,sample.depth));
         mBinding.strengthTV.setText(r.getString(R.string.strength, sample.strength));
         mBinding.fishDepthTV.setText(r.getString(R.string.fish_depth, sample.fishDepth));
-        mBinding.fishStrengthTV.setText(r.getString(R.string.fish_strength, sample.fishStrength));
-        mBinding.battTV.setText(r.getString(R.string.battery, mBattery));
+        mBinding.fishStrengthTV.setText(r.getString(R.string.fish_strength,sample.fishStrength));
+        mBinding.battTV.setText(r.getString(R.string.battery, sample.battery));
         mBinding.tempTV.setText(r.getString(R.string.temperature, sample.temperature));
         mBinding.sonarRateTV.setText(r.getString(R.string.freq, mAveSonarRate));
     }
 
     private void updateLocDisplay() {
-        Sample sample = mSimulator.getSample();
+        Sample sample = mSampleGenerator.getSample();
         Resources r = getResources();
         mBinding.latTV.setText(r.getString(R.string.lat, sample.latitude));
         mBinding.lonTV.setText(r.getString(R.string.lon, sample.longitude));
@@ -276,10 +335,7 @@ public class ServiceFragment extends Fragment {
      * Update the bluetooth characteristic stored value
      */
     private synchronized void updateSampleCharacteristic() {
-        Sample sample = mSimulator.getSample();
-        double depthFt = sample.depth * m2ft;
-        double fishDepthFt = sample.fishDepth * m2ft;
-        double degf = 9 * sample.temperature / 5.0 + 32;
+        Sample sample = mSampleGenerator.getSample();
 
         byte[] data = new byte[18];
         data[0] = ID0;
@@ -288,14 +344,14 @@ public class ServiceFragment extends Fragment {
         data[3] = 0;
         data[4] = mDry ? (byte) 0x8 : 0; // Dry. Only the top bit used
         data[5] = 9;
-        data[6] = (byte) Math.floor(depthFt);
-        data[7] = (byte) Math.floor(((depthFt - data[6]) * 100));
-        data[8] = (byte) sample.strength; // 0..255
-        data[9] = (byte) Math.floor(fishDepthFt);
-        data[10] = (byte) Math.floor(((fishDepthFt - data[9]) * 100));
-        data[11] = (byte) (sample.fishStrength | ((int) Math.floor(mBattery) << 4));
-        data[12] = (byte) Math.floor(degf);
-        data[13] = (byte) Math.floor((degf - data[12]) * 100);
+        data[6] = (byte) Math.floor(sample.depthFt());
+        data[7] = (byte) Math.floor(((sample.depthFt() - data[6]) * 100));
+        data[8] = (byte) (sample.strength * 255 / 100); // 0..255
+        data[9] = (byte) Math.floor(sample.fishDepthFt());
+        data[10] = (byte) Math.floor(((sample.fishDepthFt() - data[9]) * 100));
+        data[11] = (byte) ((int)(sample.fishStrength * 15 / 100) | ((int) Math.floor(6 * sample.battery / 100) << 4));
+        data[12] = (byte) Math.floor(sample.tempF());
+        data[13] = (byte) Math.floor((sample.tempF() - data[12]) * 100);
         data[14] = 0;
         data[15] = 0;
         data[16] = 0;
@@ -304,17 +360,19 @@ public class ServiceFragment extends Fragment {
             checksum += data[i];
         data[17] = (byte) (checksum & 0xFF);
 
-        BluetoothGattCharacteristic cha = mBluetoothService.getCharacteristic(BTC_CUSTOM_SAMPLE);
+        BluetoothGattCharacteristic cha = mBluetoothService.getCharacteristic(BTC_SAMPLE);
         cha.setValue(data);
-        ((MainActivity) getActivity()).sendNotificationToDevices(cha);
+        MainActivity act = ((MainActivity) getActivity());
+        if (act != null)
+            act.sendNotificationToDevices(cha);
     }
 
     private void updateLocationCharacteristic() {
-        Sample sample = mSimulator.getSample();
+        Sample sample = mSampleGenerator.getSample();
         byte[] buff = new byte[2 * Double.BYTES];
         System.arraycopy(double2byteArray(sample.latitude), 0, buff, 0, Double.BYTES);
         System.arraycopy(double2byteArray(sample.longitude), 0, buff, Double.BYTES, Double.BYTES);
-        BluetoothGattCharacteristic cha = mBluetoothService.getCharacteristic(BTC_CUSTOM_LOCATION);
+        BluetoothGattCharacteristic cha = mBluetoothService.getCharacteristic(BTC_LOCATION);
         // BLE allows a max of 20 bytes, 2 doubles is 16
         cha.setValue(buff);
         ((MainActivity) getActivity()).sendNotificationToDevices(cha);
@@ -328,7 +386,7 @@ public class ServiceFragment extends Fragment {
         }
 
         // We only support one write characteristic, so if this is anything else....
-        if (!characteristic.getUuid().equals(BTC_CUSTOM_CONFIGURE)) {
+        if (!characteristic.getUuid().equals(BTC_CONFIGURE)) {
             Log.e(TAG, "BAD WRITE CHARACTERISTIC " + characteristic.getUuid());
             return BluetoothGatt.GATT_FAILURE;
         }
@@ -354,6 +412,7 @@ public class ServiceFragment extends Fragment {
         mSensitivity = value[6];
         mNoise = value[7];
         mRange = value[8];
+        mSampleGenerator.configure(mSensitivity, mNoise, mRange);
         log("Configuration sensitivity " + mSensitivity + " noise " + mNoise + " range " + mRange);
 
         getActivity().runOnUiThread(new Runnable() {
@@ -368,31 +427,6 @@ public class ServiceFragment extends Fragment {
     // Oscillate when the timer is running
     private synchronized void onSonarTimer() {
 
-        Sample sample = mSimulator.getSample();
-        
-        //sample.depth = ft2m * simulationDepths[sisample.depthPtr];
-        // Simulate depths using a Fourier transform of a genuine series of 45 unique points
-        // over 3 minutes, generating data in the range 0..36
-        /*
-        float x = (System.currentTimeMillis() / (3 * 60 * 1000)) % 45;
-        
-        sample.depth = 34.090831 / 2
-                - 13.649756 * Math.cos(1 * 0.1428 * x) - 3.703815 * Math.sin(1 * 0.2428 * x)
-                - 1.021368 * Math.cos(2 * 0.1428 * x) + 2.330314 * Math.sin(2 * 0.1428 * x)
-                + 0.384317 * Math.cos(3 * 0.1428 * x) - 1.768034 * Math.sin(3 * 0.1428 * x)
-                - 2.280157 * Math.cos(4 * 0.1428 * x) + 2.096788 * Math.sin(4 * 0.1428 * x)
-                - 0.744763 * Math.cos(5 * 0.1428 * x) - 0.066924 * Math.sin(5 * 0.1428 * x);*/
-
-
-        /*// Strength is a sin wave, , 0..255
-        if (sample.strength == 255) mSaw = -1;
-        if (sample.strength == 0) mSaw = 1;
-        sample.strength += mSaw;
-
-        sample.fishDepth = sample.depth / 2.0;
-        sample.fishStrength = sample.strength % 16;*/
-
-        mBattery -= 0.01;
         long now = System.currentTimeMillis();
         if (mLastSonarTime == 0) {
             mAveSonarRate = mTargetSonarRate;
@@ -460,6 +494,7 @@ public class ServiceFragment extends Fragment {
         TimerTask task = new TimerTask() {
             public void run() {
                 log("Starting sample generator");
+                resetSampleCounters();
                 onSonarTimer();
                 onLocationTimer();
             }

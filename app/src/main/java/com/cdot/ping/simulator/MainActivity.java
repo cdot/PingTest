@@ -171,21 +171,21 @@ public class MainActivity extends AppCompatActivity {
                     status = BluetoothGatt.GATT_INVALID_ATTRIBUTE_LENGTH;
                 } else if (Arrays.equals(value, BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE)) {
                     status = BluetoothGatt.GATT_SUCCESS;
-                    if (characteristic.getUuid() == ServiceFragment.BTC_CUSTOM_SAMPLE) {
+                    if (characteristic.getUuid() == ServiceFragment.BTC_SAMPLE) {
                         log("Notifications disabled");
                         mServiceFragment.stopSampleGenerators();
                     }
                     descriptor.setValue(value);
                 } else if (supportsNotifications && Arrays.equals(value, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)) {
                     status = BluetoothGatt.GATT_SUCCESS;
-                    if (characteristic.getUuid() == ServiceFragment.BTC_CUSTOM_SAMPLE) {
+                    if (characteristic.getUuid() == ServiceFragment.BTC_SAMPLE) {
                         log("Notifications enabled");
                         mServiceFragment.startSampleGenerators();
                     }
                     descriptor.setValue(value);
                 } else if (supportsIndications && Arrays.equals(value, BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)) {
                     status = BluetoothGatt.GATT_SUCCESS;
-                    if (characteristic.getUuid() == ServiceFragment.BTC_CUSTOM_SAMPLE) {
+                    if (characteristic.getUuid() == ServiceFragment.BTC_SAMPLE) {
                         log("Indications enabled");
                         mServiceFragment.startSampleGenerators();
                     }
