@@ -363,7 +363,7 @@ public class ServiceFragment extends Fragment {
         BluetoothGattCharacteristic cha = mBluetoothService.getCharacteristic(BTC_SAMPLE);
         cha.setValue(data);
         MainActivity act = ((MainActivity) getActivity());
-        if (act != null)
+        if (act != null && !mSilent)
             act.sendNotificationToDevices(cha);
     }
 
@@ -375,7 +375,9 @@ public class ServiceFragment extends Fragment {
         BluetoothGattCharacteristic cha = mBluetoothService.getCharacteristic(BTC_LOCATION);
         // BLE allows a max of 20 bytes, 2 doubles is 16
         cha.setValue(buff);
-        ((MainActivity) getActivity()).sendNotificationToDevices(cha);
+        MainActivity act = ((MainActivity) getActivity());
+        if (act != null && !mSilent)
+            act.sendNotificationToDevices(cha);
     }
 
     // A remote client has requested to write to a local characteristic
